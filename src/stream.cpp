@@ -46,7 +46,7 @@ char* stream_read(DigitStream* stream, int num) {
     }
     stream->pos += num;
     for (int i = 0; i < num; ++i) {
-        auto div = multiply_div(stream->rem, 10, stream->den);
+        auto div = multiply_div(stream->rem, 10ull, stream->den);
         *e++ = char(div.quo) + '0';
         stream->rem = div.rem;
     }

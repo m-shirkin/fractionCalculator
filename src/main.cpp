@@ -14,70 +14,21 @@ div64 multiply_div(u64 a, u64 b, u64 m) {
     if (m < (1ull << 32)) {
         return { a * b / m, a * b % m };
     }
-    struct {
-        union {
-            u64 v64[2];
-            u32 v32[4];
-        };
-    } rem = {};
-    auto add = []<bool sign>(u32 * s, u32 const* x, int xlen) {
-        u32 carry = 0;
-        int i;
-        for (i = 0; i < xlen; ++i) {
-            u64 acc = s[i];
-            if constexpr (sign) {
-                acc -= x[i];
-                acc -= carry;
-            } else {
-                acc += x[i];
-                acc += carry;
-            }
-            s[i] = u32(acc);
-            carry = bool(acc >> 32);
-        }
-        if (carry) {
-            if constexpr (sign) {
-                while (s[i] == 0) {
-                    s[i++] = u32(-1);
-                }
-                --s[i];
-            } else {
-                do {
-                    ++s[i];
-                } while (s[i++] == 0);
-            }
-        }
+    if (a < b) return multiply_div(b, a, m);
+    auto combine_divs = [](div64 const& a, div64 const& b, u64 m) {
+        div64 mt = add_div(a.rem, b.rem, m);
+        return div64{a.quo + b.quo + mt.quo, mt.rem};
     };
-    auto u64tou32 = [](u64 const& x) {
-        return reinterpret_cast<u32 const*>(&x);
-    };
-    auto multiply = [&]<bool sign>(u64 x, u64 y, auto& res) {
-        auto x32 = u64tou32(x);
-        auto y32 = u64tou32(y);
-        for (int i = 0; i < 2; ++i) {
-            for (int j = 0; j < 2; ++j) {
-                u64 prod = u64(x32[i]) * y32[j];
-                auto prod32 = u64tou32(prod);
-                add.operator()<sign>(res.v32 + i + j, prod32, 2);
-            }
-        }
-    };
-    multiply.operator()<0>(a, b, rem);
-    u64 quo = 0;
-    while (rem.v64[1] > 0) {
-        static constexpr double two64 = double(1ull << 32) * double(1ull << 32);
-        static constexpr double two96 = two64 * double(1ull << 32);
-        u64 aquo;
-        if (rem.v32[3] > 0) {
-            aquo = two96 * rem.v32[3] / m;
-        } else {
-            aquo = two64 * rem.v32[2] / m;
-        }
-        quo += aquo;
-        multiply.operator()<1>(aquo, m, rem);
+    if (a >= m) {
+        return combine_divs({a/m*b, 0}, multiply_div(a%m, b, m), m);
     }
-    quo += rem.v64[0] / m;
-    return { quo, rem.v64[0] % m };
+    if (b == 1) return {0, a};
+    auto res = multiply_div(a, b/2, m);
+    res = combine_divs(res, res, m);
+    if (b&1) {
+        res = combine_divs(res, {0, a}, m);
+    }
+    return res;
 }
 
 div64 add_div(u64 a, u64 b, u64 m) {

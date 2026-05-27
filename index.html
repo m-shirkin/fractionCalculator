@@ -60,6 +60,68 @@
     text-shadow: 0 2px 0 rgba(0, 113, 156, 0.35);
   }
 
+  /* ---------- Category presets ---------- */
+  .categories {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1.5rem 0.2rem;
+  }
+  .category { position: relative; }
+  .cat-btn {
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--cyan-deep);
+    background: #fff;
+    border: 1.5px solid rgba(0, 167, 225, 0.4);
+    border-radius: 999px;
+    padding: 0.45rem 1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .cat-btn:hover { background: var(--cyan-soft); border-color: var(--cyan); }
+  .cat-btn[aria-expanded="true"] { background: var(--cyan); border-color: var(--cyan); color: #fff; }
+  .cat-btn .caret { font-size: 0.7em; transition: transform 0.15s ease; }
+  .cat-btn[aria-expanded="true"] .caret { transform: rotate(180deg); }
+
+  .cat-menu {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 7rem;
+    padding: 0.35rem;
+    background: #fff;
+    border: 1px solid rgba(17, 34, 44, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(17, 34, 44, 0.16);
+  }
+  .cat-menu[hidden] { display: none; }
+  .cat-item {
+    font: inherit;
+    font-size: 0.98rem;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 0.4rem 0.8rem;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .cat-item:hover { background: var(--cyan-soft); color: var(--cyan-deep); }
+
   /* ---------- Stage ---------- */
   main {
     flex: 1;
@@ -260,13 +322,16 @@
     <h1>Fraction Calculator</h1>
   </header>
 
+  <!-- Preset fractions, grouped into category dropdowns (populated in JS) -->
+  <nav class="categories" id="categories" aria-label="Example fractions"></nav>
+
   <main>
     <div class="calc" id="calc">
       <!-- Editable input fraction (sketch 1) -->
       <div class="frac frac--input">
-        <span class="frac__n"><input id="numerator"   type="text" inputmode="numeric" pattern="[0-9]*" maxlength="19" placeholder="num" value="16" aria-label="Numerator" /></span>
+        <span class="frac__n"><input id="numerator"   type="text" inputmode="numeric" pattern="[0-9]*" maxlength="19" placeholder="num" value="" aria-label="Numerator" /></span>
         <span class="frac__bar"></span>
-        <span class="frac__d"><input id="denominator" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="19" placeholder="den" value="14" aria-label="Denominator" /></span>
+        <span class="frac__d"><input id="denominator" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="19" placeholder="den" value="" aria-label="Denominator" /></span>
       </div>
 
       <!-- Result chain (sketch 2) injected here -->
@@ -356,7 +421,7 @@ class DigitStream {
 //   reducedForm : [num, den]    | null  (null = already in lowest terms)
 //   mixedNumber : [whole, n, d] | null  (null = no integer part)
 function reduce(numerator, denominator) {
-  if (numerator % denominator == 0) return [null, null];
+  if (denominator == 0n || numerator % denominator == 0n) return [null, null];
   reducedForm = null;
   let gcd = new BigUint64Array(callWithArgs('gcd', [numerator, denominator], 8))[0];
   if (gcd > 1) {
@@ -421,6 +486,7 @@ cache = null;
 // Shared by the two stubs so the inline period count and the streamed full
 // expansion always agree (a real implementation derives both from num/den).
 function calculateDecimal(numerator, denominator, maxSize) {
+  if (denominator == 0) return ['∞', null];
   if (!cache || cache.num != numerator || cache.den != denominator) {
     cache = {
         num: numerator,
@@ -468,9 +534,9 @@ const expandBarEl = document.getElementById('expandBar');
 const expandBtnEl = document.getElementById('expandBtn');
 const expansionEl = document.getElementById('expansion');
 
-let pending  = null;   // { num, den, expansion, period } when a truncated period is on screen
-let expanded = false;  // is the full period currently written out?
-let expandState = null;  // { written, onScroll } for the lazy expansion writer
+// The current fraction (num/den) and its period live in `cache` (set by
+// calculateDecimal); whether the expansion is open is just !expansionEl.hidden.
+let expandState = null;  // lazy-load scroll state ({ done, onScroll }) while expanded
 
 function fractionNode(n, d, cls = '') {
   const f = document.createElement('div');
@@ -497,7 +563,7 @@ function decimalNode(str, period) {
     const periodLen = period != null ? period : m[2].length;
     const label = document.createElement('span');
     label.className = 'period-label';
-    label.textContent = `${Number(periodLen).toLocaleString('en-US')}-digit period`;
+    label.textContent = `${periodLen.toLocaleString('en-US')}-digit period`;
     rep.appendChild(label);
 
     span.append(m[1], rep);
@@ -546,7 +612,7 @@ function decimalBudget(decSeg) {
 }
 
 function expandLabel(period) {
-  return `Show full expansion · ${Number(period).toLocaleString('en-US')} digits`;
+  return `Show full expansion · ${period.toLocaleString('en-US')} digits`;
 }
 
 // Monospace characters that fit on one line of the expansion box.
@@ -577,15 +643,13 @@ function clearExpansionOutput() {
 // Fully reset: stop writing, empty the box, and hide the expand button.
 function resetExpansion() {
   clearExpansionOutput();
-  expanded = false;
-  pending = null;
   expandBarEl.hidden = true;
 }
 
 // Write the full expansion below the result, full screen width, lazily: fill only
 // the current viewport up front, then append more as the user scrolls near the
 // bottom. The Reader streams the FINITE full form and reports end via read()===''.
-function startExpansion({ num, den }) {
+function startExpansion() {
   const reader = new Reader(cache);
 
   expansionEl.hidden = false;            // visible so the line width can be measured
@@ -657,7 +721,7 @@ function render(animate = true) {
   const d = denEl.value.trim();
 
   // Wait for a valid, non-zero-denominator fraction (sketch 1 state).
-  if (n === '' || d === '' || Number(d) === 0) {
+  if (n === '' || d === '') {
     clearResult();
     return;
   }
@@ -707,8 +771,8 @@ function render(animate = true) {
     decSeg.appendChild(decimalNode(decimalStr, period));
 
     // Offer the expansion only when the inline decimal is actually truncated.
+    // (The fraction + period are already in `cache`, set by calculateDecimal.)
     if (decimalStr.includes('...') && period != null) {
-      pending = { num: BigInt(n), den: BigInt(d), expansion: decimalStr, period };
       expandBtnEl.textContent = expandLabel(period);
       expandBarEl.hidden = false;
     }
@@ -742,15 +806,13 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter') render(); });
 
 // Toggle the full-period write-out below the result.
 expandBtnEl.addEventListener('click', () => {
-  if (!pending) return;
-  if (expanded) {
+  if (expandBarEl.hidden) return;          // nothing to expand
+  if (!expansionEl.hidden) {               // currently open -> collapse
     clearExpansionOutput();
-    expanded = false;
-    expandBtnEl.textContent = expandLabel(pending.period);
+    expandBtnEl.textContent = expandLabel(cache.fractionInfo[2]);   // period digit count
   } else {
-    expanded = true;
     expandBtnEl.textContent = 'Hide full expansion';
-    startExpansion(pending);
+    startExpansion();
   }
 });
 
@@ -761,6 +823,93 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => render(false), 150);
 });
+
+/* ---------------------- Category presets ---------------------- */
+// Each category is a dropdown of [numerator, denominator] presets. π and e use
+// their first three continued-fraction convergents (best rational approximations).
+// Large values are strings: they exceed Number.MAX_SAFE_INTEGER, and pickFraction
+// stringifies them straight into the inputs (no arithmetic needed here).
+const CATEGORIES = {
+  'Simple fractions': [[1, 3], [6, 7], [10, 81], [23, 33]],
+  'π':                [
+                        [22, 7],
+                        [333, 106],
+                        [355, 113],
+                        ['4272943', '1360120'],
+                        ['1783366216531', '567663097408'],
+                        ['2646693125139304345', '842468587426513207']
+                      ],
+  'e':                [
+                        [19, 7],
+                        [87, 32], 
+                        [193, 71],
+                        ['1084483', '398959'],
+                        ['1098127402131', '403978495031'],
+                        ['2816596318483412024', '1036167879649219395']
+                      ],
+};
+const categoriesEl = document.getElementById('categories');
+
+function closeMenus(except) {
+  for (const btn of categoriesEl.querySelectorAll('.cat-btn')) {
+    if (btn === except) continue;
+    btn.setAttribute('aria-expanded', 'false');
+    btn.nextElementSibling.hidden = true;
+  }
+}
+
+function pickFraction(num, den) {
+  numEl.value = String(num);
+  denEl.value = String(den);
+  autosize(numEl);
+  autosize(denEl);
+  render();
+}
+
+numEl.value = '1';
+denEl.value = '3';
+
+for (const [name, fractions] of Object.entries(CATEGORIES)) {
+  const cat = document.createElement('div');
+  cat.className = 'category';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cat-btn';
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.append(name + ' ');
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.textContent = '▾';
+  btn.append(caret);
+
+  const menu = document.createElement('div');
+  menu.className = 'cat-menu';
+  menu.hidden = true;
+
+  for (const [num, den] of fractions) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'cat-item';
+    item.textContent = `${num}/${den}`;
+    item.addEventListener('click', () => { pickFraction(num, den); closeMenus(); });
+    menu.append(item);
+  }
+
+  btn.addEventListener('click', () => {
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    closeMenus();
+    if (!open) { btn.setAttribute('aria-expanded', 'true'); menu.hidden = false; }
+  });
+
+  cat.append(btn, menu);
+  categoriesEl.append(cat);
+}
+
+// Close any open menu on an outside click or Escape.
+document.addEventListener('click', e => { if (!categoriesEl.contains(e.target)) closeMenus(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenus(); });
 </script>
 </body>
 </html>

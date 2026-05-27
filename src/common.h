@@ -52,7 +52,6 @@ struct div64 {
 };
 
 // Return a*b/m and a*b%m, avoiding overflow
-// a, b < m
 div64 multiply_div(u64 a, u64 b, u64 m);
 
 // Return (a+b)/m and (a+b)%m, avoiding overflow
