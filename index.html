@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fraction Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --cyan:       #00a7e1;
+    --cyan-deep:  #0089bd;
+    --cyan-soft:  #d8f1fb;
+    --ink:        #11222c;
+    --paper:      #f3f7fa;
+    --grid:       rgba(17, 34, 44, 0.055);
+    --grid-major: rgba(17, 34, 44, 0.09);
+    --muted:      #7b8c97;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: "Courier Prime", "Courier New", ui-monospace, monospace;
+    color: var(--ink);
+    background-color: var(--paper);
+    /* Graph-paper texture — contextual for a math tool */
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+    background-size: 26px 26px, 26px 26px, 130px 130px, 130px 130px;
+    background-position: -1px -1px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  /* ---------- Header ---------- */
+  .app-header {
+    background: var(--cyan);
+    box-shadow:
+      inset 0 -4px 0 var(--cyan-deep),
+      0 6px 22px rgba(0, 137, 189, 0.28);
+    padding: clamp(1.1rem, 3.5vw, 2rem) 1.5rem;
+    text-align: center;
+  }
+  .app-header h1 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    font-optical-sizing: auto;
+    color: #fff;
+    letter-spacing: 0.01em;
+    font-size: clamp(2rem, 6vw, 3.6rem);
+    line-height: 1;
+    text-shadow: 0 2px 0 rgba(0, 113, 156, 0.35);
+  }
+
+  /* ---------- Stage ---------- */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem 3rem;
+  }
+
+  .calc {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    column-gap: 0;
+    row-gap: 0.6rem;
+    transition: justify-content 0.5s ease;
+  }
+  /* ---------- Fraction ---------- */
+  .frac {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    line-height: 1.05;
+  }
+  .frac__n, .frac__d {
+    display: block;
+    padding: 0.04em 0.28em;
+    white-space: nowrap;
+  }
+  .frac__bar {
+    height: 0.09em;
+    min-height: 3px;
+    background: var(--cyan);
+    border-radius: 99px;
+    margin: 0.12em 0;
+    transform-origin: left center;
+    animation: bar-grow 0.6s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+  /* Editable input fraction */
+  .frac--input {
+    font-size: clamp(2.4rem, 7vw, 4.4rem);
+  }
+  .has-result .frac--input { font-size: clamp(1.4rem, 4.2vw, 2.3rem); }
+
+  .frac--input input {
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    text-align: center;
+    box-sizing: content-box;
+    width: 2ch;            /* JS resizes this to fit the contents */
+    padding: 0.04em 0.25em;
+    border-radius: 8px;
+    caret-color: var(--cyan);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  .frac--input input::placeholder { color: #b7c4cc; }
+  .frac--input input:hover { background: rgba(0, 167, 225, 0.07); }
+  .frac--input input:focus {
+    outline: none;
+    background: var(--cyan-soft);
+    box-shadow: 0 0 0 2px rgba(0, 167, 225, 0.35);
+  }
+
+  /* ---------- Equals + results ---------- */
+  .eq {
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0.35em;   /* equal space on both sides of the "=" */
+  }
+
+  .results {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    column-gap: 0;
+    row-gap: 0.6rem;
+    font-size: clamp(1.4rem, 4.2vw, 2.3rem);
+  }
+
+  /* A labelled result segment */
+  .seg {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: seg-in 0.5s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+  @keyframes seg-in { to { opacity: 1; transform: none; } }
+  .results.no-anim .seg { animation: none; opacity: 1; transform: none; }
+
+  /* Reduced / small fractions inside results */
+  .frac--out { font-size: 0.92em; }
+  .frac--out .frac__bar { animation: none; }
+
+  /* Mixed number: whole part + small fraction */
+  .mixed { display: inline-flex; align-items: center; gap: 0.22em; }
+  .mixed .frac { font-size: 0.62em; }
+  .mixed .frac__bar { animation: none; }
+
+  /* Decimal expansion with repeating digits under a vinculum (overline) */
+  .decimal { white-space: nowrap; }
+  .decimal .rep {
+    position: relative;
+    border-top: 0.09em solid currentColor;
+    padding-top: 0.04em;
+  }
+  /* Length of the repeating period, labelled beneath it */
+  .period-label {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 0.7em;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* ---------- Full-period expansion ---------- */
+  /* While expanded the content is tall and scrollable, so stop vertically
+     centering (centering would push the top out of the scrollable area). */
+  main.expanded { justify-content: flex-start; }
+
+  .expand-bar {
+    margin-top: 1.6rem;
+    display: flex;
+    justify-content: center;
+  }
+  .expand-bar[hidden] { display: none; }   /* the class's display:flex would otherwise win */
+  .expand-btn {
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--cyan);
+    border: none;
+    border-radius: 999px;
+    padding: 0.55rem 1.3rem;
+    cursor: pointer;
+    box-shadow: 0 2px 0 var(--cyan-deep);
+    transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .expand-btn:hover { background: var(--cyan-deep); }
+  .expand-btn:active { transform: translateY(2px); box-shadow: none; }
+
+  .expansion {
+    width: 100%;
+    margin-top: 1.3rem;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+  .exp-line { white-space: pre; }
+  /* Vinculum (overline) over the period digits — replaces the (…) brackets */
+  .exp-rep {
+    border-top: 0.1em solid currentColor;
+    padding-top: 0.06em;
+  }
+
+  .hint {
+    margin-top: clamp(2.5rem, 8vh, 5rem);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-align: center;
+  }
+  .hint kbd {
+    font: inherit;
+    background: #fff;
+    border: 1px solid rgba(17,34,44,0.18);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 0.05em 0.4em;
+  }
+
+  @media (max-width: 540px) {
+    .calc, .calc.has-result { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+  <header class="app-header">
+    <h1>Fraction Calculator</h1>
+  </header>
+
+  <main>
+    <div class="calc" id="calc">
+      <!-- Editable input fraction (sketch 1) -->
+      <div class="frac frac--input">
+        <span class="frac__n"><input id="numerator"   type="text" inputmode="numeric" pattern="[0-9]*" maxlength="19" placeholder="num" value="16" aria-label="Numerator" /></span>
+        <span class="frac__bar"></span>
+        <span class="frac__d"><input id="denominator" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="19" placeholder="den" value="14" aria-label="Denominator" /></span>
+      </div>
+
+      <!-- Result chain (sketch 2) injected here -->
+      <div class="results" id="results" aria-live="polite"></div>
+    </div>
+
+    <!-- Expand: write the full period out line-by-line (only when truncated) -->
+    <div class="expand-bar" id="expandBar" hidden>
+      <button class="expand-btn" id="expandBtn" type="button"></button>
+    </div>
+    <div class="expansion" id="expansion" hidden></div>
+
+    <p class="hint">Enter a numerator and denominator, then press <kbd>Enter</kbd> to calculate</p>
+  </main>
+
+<script>
+/* =========================================================================
+   Result producers — templates from fn_template.js (NOT implemented here).
+   reduce() returns the two short forms; calculateDecimal() returns the
+   decimal expansion, capped to the space available on screen.
+   ========================================================================= */
+
+var instance;
+(async function(){
+    const response = await fetch('lib.wasm');
+    const bytes = await response.arrayBuffer();
+    const { instance } = await WebAssembly.instantiate(bytes, {
+        env: {
+            'log': (x) => {console.log(x);}
+        }
+    });
+    return instance;
+}()).then((x)=>{ instance=x; });
+
+function callWithArgs(fn, args, sz) {
+    const { memory, input } = instance.exports;
+    let input_ptr = input();
+    let cpp_args = [];
+    for (let a of args) {
+        if (typeof(a) == 'number' || typeof(a) == 'bigint') {
+            cpp_args.push(a);
+        } else {
+            cpp_args.push(input_ptr);
+            if (typeof(a) == 'string') {
+                const bytes = new TextEncoder().encode(a);
+                const inputBuffer = new Uint8Array(memory.buffer, input_ptr, bytes.length + 1);
+                inputBuffer.set(bytes);
+                inputBuffer[bytes.length] = 0;
+                input_ptr += bytes.length + 1;
+            } else {
+                let bytes = new Uint8Array(a);
+                const inputBuffer = new Uint8Array(memory.buffer, input_ptr, bytes.length);
+                inputBuffer.set(bytes);
+                input_ptr += bytes.length;
+            }
+        }
+    }
+    output = instance.exports[fn](...cpp_args);
+    if (sz > 0) {
+        return memory.buffer.slice(output, output + sz);
+    } else {
+        return output;
+    }
+}
+
+// Wrapper around C++ interface
+class DigitStream {
+  constructor(num, den) {
+    this._stream = callWithArgs('streamCreate', [num, den], 0);
+  }
+  read(n) {
+    n = Number(n);
+    if (n == 0) return '';
+    return new TextDecoder().decode(new Uint8Array(callWithArgs('streamRead', [this._stream, n], n)));
+  }
+  seek(p) {
+    p = BigInt(p);
+    if (p < 0) {
+      callWithArgs('streamSeek', [this._stream, -p, 0]);
+    } else {
+      callWithArgs('streamSeek', [this._stream, p, 1]);
+    }
+  }
+}
+
+// reduce -> [ reducedForm, mixedNumber ]
+//   reducedForm : [num, den]    | null  (null = already in lowest terms)
+//   mixedNumber : [whole, n, d] | null  (null = no integer part)
+function reduce(numerator, denominator) {
+  if (numerator % denominator == 0) return [null, null];
+  reducedForm = null;
+  let gcd = new BigUint64Array(callWithArgs('gcd', [numerator, denominator], 8))[0];
+  if (gcd > 1) {
+      reducedForm = [numerator / gcd, denominator / gcd];
+  }
+  mixedNumber = null;
+  if (numerator > denominator) {
+      mixedNumber = [numerator / denominator, numerator % denominator / gcd, denominator / gcd];
+  }
+  return [reducedForm, mixedNumber];
+}
+
+// Reader — streams the FINITE full expansion (prefix + one whole period) of
+// numerator/denominator, a chunk at a time, so a huge period is produced only as
+// it's needed. read(n) returns the next up-to-n characters, or '' once exhausted.
+class Reader {
+  constructor(cache) {
+    // Cache from earlier execution
+    this._cache = cache;
+    this._stream = new DigitStream(cache.num, cache.den);
+    this._stage = 0; // 0 - integer part, 1 - non-repeating part, 2 - period part, 3 - finished
+    this._pos = 0n;
+  }
+  read(n) {
+    let out = '';
+    while (n > 0 && this._stage < 3) {
+      let decimalPoint = this._stage == 1 && this._cache.fractionInfo[1] + this._cache.fractionInfo[2] > 0 ? 1 : 0;
+      let remainingLen = this._cache.fractionInfo[this._stage] + BigInt(decimalPoint) - this._pos;
+      if (this._pos == 0n && this._stage == 2) {
+        out += '(';
+      }
+      if (this._pos == 0n && decimalPoint == 1) {
+        out += '.';
+        ++this._pos;
+        --n;
+      } else if (remainingLen >= BigInt(n)) {
+        out += this._stream.read(n);
+        this._pos += BigInt(n);
+        n = 0;
+      } else {
+        out += this._stream.read(remainingLen);
+        this._pos = 0n;
+        ++this._stage;
+        n -= Number(remainingLen);
+        if (this._stage == 3 && this._cache.fractionInfo[2] > 0n) {
+          out += ')';
+        }
+      }
+    } 
+    return out; //'' signals the end of the expansion
+  }
+}
+
+cache = null;
+
+// calculateDecimal -> [ expansion, periodLength ]
+//   expansion    = decimal string, repeating digits wrapped in "(...)"
+//   periodLength = digit count of the period when the expansion is truncated;
+//                  null when the full period is shown (it's derived from the output)
+//   maxSize = monospace characters available on the row for the decimal, so
+//             the expansion can be capped to what will fit on screen.
+// Shared by the two stubs so the inline period count and the streamed full
+// expansion always agree (a real implementation derives both from num/den).
+function calculateDecimal(numerator, denominator, maxSize) {
+  if (!cache || cache.num != numerator || cache.den != denominator) {
+    cache = {
+        num: numerator,
+        den: denominator
+    };
+    cache['fractionInfo'] = new BigUint64Array(callWithArgs('fractionInfo', [numerator, denominator], 24));
+  }
+  let [id, nd, pd] = cache['fractionInfo'];
+  let stream = new DigitStream(numerator, denominator);
+  let result = '';
+  result += stream.read(id);
+  if (nd + pd != 0n) {
+    result += '.';
+    result += stream.read(nd);
+    if (pd != 0n) {
+      result += '(';
+      // Attempt to add ellipsis to period
+      if (pd >= 9n) {
+        let periodSize = BigInt(maxSize) - id - nd - 1n;
+        if (periodSize < pd) {
+          let partd = periodSize <= 9n ? 3n : (periodSize - 3n) >> 1n;
+          result += stream.read(partd);
+          result += '...';
+          stream.seek(nd+pd-partd);
+          result += stream.read(partd);
+          result += ')';
+          return [result, pd];
+        }
+      }
+      result += stream.read(pd);
+      result += ')';
+    }
+  }
+  return [result, null]
+}
+
+/* ---------------------- Layout / rendering ---------------------- */
+const numEl     = document.getElementById('numerator');
+const denEl     = document.getElementById('denominator');
+const mainEl    = document.querySelector('main');
+const calcEl    = document.getElementById('calc');
+const resultsEl = document.getElementById('results');
+const fracInputEl = document.querySelector('.frac--input');
+const expandBarEl = document.getElementById('expandBar');
+const expandBtnEl = document.getElementById('expandBtn');
+const expansionEl = document.getElementById('expansion');
+
+let pending  = null;   // { num, den, expansion, period } when a truncated period is on screen
+let expanded = false;  // is the full period currently written out?
+let expandState = null;  // { written, onScroll } for the lazy expansion writer
+
+function fractionNode(n, d, cls = '') {
+  const f = document.createElement('div');
+  f.className = 'frac ' + cls;
+  f.innerHTML =
+    `<span class="frac__n">${n}</span>` +
+    `<span class="frac__bar"></span>` +
+    `<span class="frac__d">${d}</span>`;
+  return f;
+}
+
+function decimalNode(str, period) {
+  const span = document.createElement('span');
+  span.className = 'decimal';
+  // Repeating part is whatever sits inside the parens (may include "..." when truncated).
+  const m = String(str).match(/^(.*?)\((.+)\)$/);
+  if (m) {
+    const rep = document.createElement('span');
+    rep.className = 'rep';
+    rep.textContent = m[2];
+
+    // Period length: use the given value when the expansion is truncated; when
+    // it's null the full period is shown, so count its digits from the output.
+    const periodLen = period != null ? period : m[2].length;
+    const label = document.createElement('span');
+    label.className = 'period-label';
+    label.textContent = `${Number(periodLen).toLocaleString('en-US')}-digit period`;
+    rep.appendChild(label);
+
+    span.append(m[1], rep);
+  } else {
+    span.textContent = str;
+  }
+  return span;
+}
+
+// Builds a segment with just the leading "="; the caller appends the value.
+function makeSeg(order) {
+  const seg = document.createElement('div');
+  seg.className = 'seg';
+  seg.style.animationDelay = (order * 0.09) + 's';
+
+  const eq = document.createElement('span');
+  eq.className = 'eq';
+  eq.textContent = '=';
+
+  seg.appendChild(eq);
+  return seg;
+}
+
+// Characters of decimal that fit in the space left on the row, after the
+// leading fraction, the reduced/mixed segments and the decimal's own "=".
+function decimalBudget(decSeg) {
+  // Width of one monospace character in the results font.
+  const probe = document.createElement('span');
+  probe.className = 'decimal';                 // inherits the results font + size
+  probe.textContent = '0'.repeat(20);
+  probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;';
+  resultsEl.appendChild(probe);
+  const charW = probe.getBoundingClientRect().width / 20;
+  probe.remove();
+
+  // Space already consumed by everything that precedes the decimal value.
+  let used = fracInputEl.getBoundingClientRect().width;
+  for (const seg of resultsEl.children) used += seg.getBoundingClientRect().width;
+
+  const remaining = calcEl.clientWidth - used;
+  // Too little left on this line? The decimal wraps to its own line, where it
+  // gets the full row width minus its leading "=".
+  const fullLine = calcEl.clientWidth - decSeg.getBoundingClientRect().width;
+  const budget = remaining > charW * 3 ? remaining : fullLine;
+  return Math.max(1, Math.floor(budget / charW));
+}
+
+function expandLabel(period) {
+  return `Show full expansion · ${Number(period).toLocaleString('en-US')} digits`;
+}
+
+// Monospace characters that fit on one line of the expansion box.
+function charsPerLine() {
+  const probe = document.createElement('span');
+  probe.className = 'exp-line';
+  probe.textContent = '0'.repeat(50);
+  probe.style.visibility = 'hidden';
+  expansionEl.appendChild(probe);
+  const charW = probe.getBoundingClientRect().width / 50;
+  probe.remove();
+  const cs = getComputedStyle(expansionEl);
+  const avail = expansionEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return Math.max(1, Math.floor(avail / charW) - 1);
+}
+
+// Stop lazy-loading and empty the expansion (keeps the button).
+function clearExpansionOutput() {
+  if (expandState) {
+    window.removeEventListener('scroll', expandState.onScroll);
+    expandState = null;
+  }
+  expansionEl.innerHTML = '';
+  expansionEl.hidden = true;
+  mainEl.classList.remove('expanded');
+}
+
+// Fully reset: stop writing, empty the box, and hide the expand button.
+function resetExpansion() {
+  clearExpansionOutput();
+  expanded = false;
+  pending = null;
+  expandBarEl.hidden = true;
+}
+
+// Write the full expansion below the result, full screen width, lazily: fill only
+// the current viewport up front, then append more as the user scrolls near the
+// bottom. The Reader streams the FINITE full form and reports end via read()===''.
+function startExpansion({ num, den }) {
+  const reader = new Reader(cache);
+
+  expansionEl.hidden = false;            // visible so the line width can be measured
+  expansionEl.innerHTML = '';
+  mainEl.classList.add('expanded');      // top-align so the long output scrolls cleanly
+
+  const perLine = charsPerLine();
+  const state = { done: false, onScroll: null };
+  expandState = state;
+
+  // The Reader marks the period with "(" … ")"; we strip those and instead draw
+  // a vinculum (overline) over the period digits — the line stays open across
+  // rows, so inPeriod is tracked between chunks.
+  let inPeriod = false;
+
+  function appendLine() {
+    const chunk = reader.read(perLine);
+    if (chunk === '') { state.done = true; return; }   // Reader exhausted
+
+    const line = document.createElement('div');
+    line.className = 'exp-line';
+    let buf = '';
+    const flush = () => {
+      if (!buf) return;
+      if (inPeriod) {
+        const span = document.createElement('span');
+        span.className = 'exp-rep';
+        span.textContent = buf;
+        line.appendChild(span);
+      } else {
+        line.appendChild(document.createTextNode(buf));
+      }
+      buf = '';
+    };
+    for (const ch of chunk) {
+      if (ch === '(') { flush(); inPeriod = true; continue; }   // start of period
+      if (ch === ')') { flush(); inPeriod = false; continue; }  // end of period
+      buf += ch;
+    }
+    flush();
+    expansionEl.appendChild(line);
+  }
+  function nearBottom() {
+    const doc = document.documentElement;
+    return window.scrollY + window.innerHeight >= doc.scrollHeight - 500;
+  }
+  function loadMore() {
+    let guard = 0;
+    while (!state.done && nearBottom() && guard++ < 200000) appendLine();
+    if (state.done) {
+      window.removeEventListener('scroll', loadMore);
+      state.onScroll = null;
+    }
+  }
+  state.onScroll = loadMore;
+  window.addEventListener('scroll', loadMore, { passive: true });
+  loadMore();   // initial fill of the current viewport
+}
+
+// Clear the result chain (and any expansion) — back to the full-scale input state.
+function clearResult() {
+  resultsEl.innerHTML = '';
+  calcEl.classList.remove('has-result');
+  resetExpansion();
+}
+
+function render(animate = true) {
+  const n = numEl.value.trim();
+  const d = denEl.value.trim();
+
+  // Wait for a valid, non-zero-denominator fraction (sketch 1 state).
+  if (n === '' || d === '' || Number(d) === 0) {
+    clearResult();
+    return;
+  }
+
+  // Pass 1 — the two short forms.
+  const [reduced, mixed] = reduce(BigInt(n), BigInt(d));
+
+  resultsEl.classList.toggle('no-anim', !animate);
+  resultsEl.innerHTML = '';
+  calcEl.classList.add('has-result');   // result layout first, so widths measure right
+  let order = 0;
+
+  // Out1 — reduced form (omitted when already in lowest terms)
+  if (reduced) {
+    const s = makeSeg(order++);
+    s.appendChild(fractionNode(reduced[0], reduced[1], 'frac--out'));
+    resultsEl.appendChild(s);
+  }
+
+  // Out2 — mixed number (omitted when there is no integer part)
+  if (mixed) {
+    const [whole, mn, md] = mixed;
+    const wrap = document.createElement('span');
+    wrap.className = 'mixed';
+    const w = document.createElement('span');
+    w.textContent = whole;
+    wrap.append(w, fractionNode(mn, md));
+    const s = makeSeg(order++);
+    s.appendChild(wrap);
+    resultsEl.appendChild(s);
+  }
+
+  // Pass 2 — drop in the decimal's "=", measure the space left on the row,
+  // then ask for an expansion capped to that budget and fill it in.
+  const decSeg = makeSeg(order++);
+  resultsEl.appendChild(decSeg);
+  const maxSize = decimalBudget(decSeg);
+  const result = calculateDecimal(BigInt(n), BigInt(d), maxSize);
+
+  // Clear any prior expansion; re-offered below if this decimal is truncated.
+  resetExpansion();
+
+  if (result == null) {
+    decSeg.remove();
+  } else {
+    const [decimalStr, period] = Array.isArray(result) ? result : [result, null];
+    decSeg.appendChild(decimalNode(decimalStr, period));
+
+    // Offer the expansion only when the inline decimal is actually truncated.
+    if (decimalStr.includes('...') && period != null) {
+      pending = { num: BigInt(n), den: BigInt(d), expansion: decimalStr, period };
+      expandBtnEl.textContent = expandLabel(period);
+      expandBarEl.hidden = false;
+    }
+  }
+}
+
+// Keep both inputs digit-only, capped at 19 characters, and sized to fit.
+function autosize(el) {
+  const len = el.value.length || el.placeholder.length || 1;
+  el.style.width = len + 'ch';
+}
+[numEl, denEl].forEach(el => {
+  el.addEventListener('input', () => {
+    const digits = el.value.replace(/\D/g, '').slice(0, 19);
+    if (digits !== el.value) el.value = digits;
+    autosize(el);
+    clearResult();   // editing the numbers invalidates the shown result
+  });
+  autosize(el);
+});
+
+// Up/Down arrows move between numerator and denominator (matching their layout).
+numEl.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); denEl.focus(); denEl.select(); }
+});
+denEl.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp') { e.preventDefault(); numEl.focus(); numEl.select(); }
+});
+// Compute only on Enter — page stays at full scale with no results until then.
+document.addEventListener('keydown', e => { if (e.key === 'Enter') render(); });
+
+// Toggle the full-period write-out below the result.
+expandBtnEl.addEventListener('click', () => {
+  if (!pending) return;
+  if (expanded) {
+    clearExpansionOutput();
+    expanded = false;
+    expandBtnEl.textContent = expandLabel(pending.period);
+  } else {
+    expanded = true;
+    expandBtnEl.textContent = 'Hide full expansion';
+    startExpansion(pending);
+  }
+});
+
+// Re-run with a fresh maxSize when the available width changes (no re-animation).
+let resizeTimer;
+window.addEventListener('resize', () => {
+  if (!calcEl.classList.contains('has-result')) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => render(false), 150);
+});
+</script>
+</body>
+</html>
