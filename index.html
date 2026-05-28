@@ -839,9 +839,27 @@ expandBtnEl.addEventListener('click', () => {
   }
 });
 
+// The layout only depends on how many symbols fit across a line. Measure that.
+function lineLength() {
+  const probe = document.createElement('span');
+  probe.textContent = '0'.repeat(50);
+  probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:1.1rem;';
+  document.body.appendChild(probe);
+  const charW = probe.getBoundingClientRect().width / 50;
+  probe.remove();
+  return Math.floor(calcEl.clientWidth / charW);
+}
+
 // Re-run with a fresh maxSize when the available width changes (no re-animation).
+// On mobile, scrolling fires a spurious resize as the URL bar shows/hides — that
+// only changes the height, so the line length is unchanged and we skip the
+// re-render (which would otherwise collapse an open expansion).
 let resizeTimer;
+let lastLineLen = lineLength();
 window.addEventListener('resize', () => {
+  const len = lineLength();
+  if (len === lastLineLen) return;   // width-equivalent change (e.g. URL bar) — ignore
+  lastLineLen = len;
   if (!calcEl.classList.contains('has-result')) return;
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => render(false), 150);
