@@ -205,11 +205,14 @@
   .results {
     display: flex;
     align-items: center;
+    justify-content: center;
     flex-wrap: wrap;
     column-gap: 0;
     row-gap: 0.6rem;
     font-size: clamp(1.4rem, 4.2vw, 2.3rem);
   }
+  /* A decimal that can't fit gets its own full-width line, centered. */
+  .seg--block { flex: 0 0 100%; justify-content: center; }
 
   /* A labelled result segment */
   .seg {
@@ -315,6 +318,20 @@
 
   @media (max-width: 540px) {
     .calc, .calc.has-result { justify-content: center; }
+  }
+
+  /* Narrow screens: the centered popup could overflow the edge, so instead drop
+     a full-width panel below the whole category row. Anchoring the (absolute)
+     menu to the full-width .categories nav keeps it on-screen with no JS. */
+  @media (max-width: 700px) {
+    .categories { position: relative; }
+    .category    { position: static; }
+    .cat-menu {
+      left: 0.6rem;
+      right: 0.6rem;
+      transform: none;
+    }
+    .cat-item { white-space: normal; overflow-wrap: anywhere; }
   }
 </style>
 </head>
@@ -478,16 +495,8 @@ class Reader {
 
 cache = null;
 
-// calculateDecimal -> [ expansion, periodLength ]
-//   expansion    = decimal string, repeating digits wrapped in "(...)"
-//   periodLength = digit count of the period when the expansion is truncated;
-//                  null when the full period is shown (it's derived from the output)
-//   maxSize = monospace characters available on the row for the decimal, so
-//             the expansion can be capped to what will fit on screen.
-// Shared by the two stubs so the inline period count and the streamed full
-// expansion always agree (a real implementation derives both from num/den).
-function calculateDecimal(numerator, denominator, maxSize) {
-  if (denominator == 0) return ['∞', null];
+function fractionInfo(numerator, denominator) {
+  if (denominator == 0n) return [1, 0, 0];
   if (!cache || cache.num != numerator || cache.den != denominator) {
     cache = {
         num: numerator,
@@ -495,6 +504,15 @@ function calculateDecimal(numerator, denominator, maxSize) {
     };
     cache['fractionInfo'] = new BigUint64Array(callWithArgs('fractionInfo', [numerator, denominator], 24));
   }
+  return cache['fractionInfo'];
+}
+
+// calculateDecimal -> expansion
+//   expansion    = decimal string, repeating digits wrapped in "(...)"
+//   maxSize = monospace characters available on the row for the decimal, so
+//             the expansion can be capped to what will fit on screen.
+function calculateDecimal(numerator, denominator, maxSize) {
+  if (denominator == 0n) return '∞';
   let [id, nd, pd] = cache['fractionInfo'];
   let stream = new DigitStream(numerator, denominator);
   let result = '';
@@ -514,14 +532,14 @@ function calculateDecimal(numerator, denominator, maxSize) {
           stream.seek(nd+pd-partd);
           result += stream.read(partd);
           result += ')';
-          return [result, pd];
+          return result;
         }
       }
       result += stream.read(pd);
       result += ')';
     }
   }
-  return [result, null]
+  return result;
 }
 
 /* ---------------------- Layout / rendering ---------------------- */
@@ -588,10 +606,10 @@ function makeSeg(order) {
   return seg;
 }
 
-// Characters of decimal that fit in the space left on the row, after the
-// leading fraction, the reduced/mixed segments and the decimal's own "=".
-function decimalBudget(decSeg) {
-  // Width of one monospace character in the results font.
+// Decimal characters that fit (in chars): `remaining` on the current row (after
+// the fraction + reduced/mixed segments + the decimal's "="), and `fullLine` on
+// a row of its own (whole width minus the leading "=").
+function decimalSpace(decSeg) {
   const probe = document.createElement('span');
   probe.className = 'decimal';                 // inherits the results font + size
   probe.textContent = '0'.repeat(20);
@@ -600,16 +618,12 @@ function decimalBudget(decSeg) {
   const charW = probe.getBoundingClientRect().width / 20;
   probe.remove();
 
-  // Space already consumed by everything that precedes the decimal value.
   let used = fracInputEl.getBoundingClientRect().width;
   for (const seg of resultsEl.children) used += seg.getBoundingClientRect().width;
 
-  const remaining = calcEl.clientWidth - used;
-  // Too little left on this line? The decimal wraps to its own line, where it
-  // gets the full row width minus its leading "=".
-  const fullLine = calcEl.clientWidth - decSeg.getBoundingClientRect().width;
-  const budget = remaining > charW * 3 ? remaining : fullLine;
-  return Math.max(1, Math.floor(budget / charW));
+  const remaining = Math.floor((calcEl.clientWidth - used) / charW);
+  const fullLine = Math.floor((calcEl.clientWidth - decSeg.getBoundingClientRect().width) / charW);
+  return { remaining: Math.max(0, remaining), fullLine: Math.max(1, fullLine) };
 }
 
 function expandLabel(period) {
@@ -755,28 +769,36 @@ function render(animate = true) {
     resultsEl.appendChild(s);
   }
 
-  // Pass 2 — drop in the decimal's "=", measure the space left on the row,
-  // then ask for an expansion capped to that budget and fill it in.
+  // Pass 2 — the decimal. Look up its shape, measure the space, decide the
+  // layout (inline / truncated / own line), then produce the string.
+  const [id, nd, pd] = fractionInfo(BigInt(n), BigInt(d));
+  const fullLen = Number(id) + ((nd + pd) > 0n ? 1 : 0) + Number(nd) + Number(pd);
+
   const decSeg = makeSeg(order++);
   resultsEl.appendChild(decSeg);
-  const maxSize = decimalBudget(decSeg);
-  const result = calculateDecimal(BigInt(n), BigInt(d), maxSize);
+
+  const { remaining, fullLine } = decimalSpace(decSeg);
+  let maxSize = remaining;
+
+  // Doesn't fit and the row is cramped (< 15 chars left): drop the decimal onto
+  // its own full-width line so it can show more of the period.
+  if (fullLen > remaining && remaining < 15) {
+    decSeg.classList.add('seg--block');
+    maxSize = fullLine;
+  }
+
+  const decimalStr = calculateDecimal(BigInt(n), BigInt(d), maxSize);
+  const period = pd > 0n ? pd : null;
 
   // Clear any prior expansion; re-offered below if this decimal is truncated.
   resetExpansion();
 
-  if (result == null) {
-    decSeg.remove();
-  } else {
-    const [decimalStr, period] = Array.isArray(result) ? result : [result, null];
-    decSeg.appendChild(decimalNode(decimalStr, period));
+  decSeg.appendChild(decimalNode(decimalStr, period));
 
-    // Offer the expansion only when the inline decimal is actually truncated.
-    // (The fraction + period are already in `cache`, set by calculateDecimal.)
-    if (decimalStr.includes('...') && period != null) {
-      expandBtnEl.textContent = expandLabel(period);
-      expandBarEl.hidden = false;
-    }
+  // Offer the expansion only when the inline decimal is actually truncated.
+  if (decimalStr.includes('...') && period != null) {
+    expandBtnEl.textContent = expandLabel(period);
+    expandBarEl.hidden = false;
   }
 }
 
